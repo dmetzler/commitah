@@ -10,7 +10,7 @@ interface Config {
 function createDefaultConfig(): Config {
     return {
         geminiApiKey: "",
-        messageSpec: "simple for each message, with Commit Convensions standard",
+        messageSpec: "More tech detailing and comprehensive in one line message.",
         sizeOption: 3,
     }
 }

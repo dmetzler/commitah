@@ -6,39 +6,40 @@ import yargs from "yargs"
 import fetch from 'node-fetch'
 import ora from 'ora';
 import { $ } from "zx/core"
-import { loadConfig, updateConfig } from "./config"
+import { loadConfig, updateConfig } from "./config.js"
 import { select } from '@inquirer/prompts';
 
-(async () => {
+const argv = await yargs(process.argv.slice(2)).options({
+    config: {
+        type: 'boolean',
+        default: false
+    },
+    configUpdate: {
+        name: 'config-update',
+        type: 'boolean',
+        default: false
+    },
+    show: {
+        type: 'boolean',
+        default: false
+    }
+}).parseAsync()
+
+
+export async function main() {
     console.log(chalk.red(figlet.textSync('Commit Ah!')))
-
-    const argv = await yargs(process.argv.slice(2)).options({
-        config: {
-            type: 'boolean',
-            default: false
-        },
-        configUpdate: {
-            name: 'config-update',
-            type: 'boolean',
-            default: false
-        },
-        show: {
-            type: 'boolean',
-            default: false
-        }
-    }).parseAsync()
-
     if (argv.config) {
-        showCurrentConfig()
+        await showCurrentConfig()
     } else if (argv.configUpdate) {
-        promptAndUpdateConfig()
+        await promptAndUpdateConfig()
     } else {
         start(argv.show)
     }
-
-})()
+}
 
 async function start(show: boolean) {
+    await checkGeminiApiKey()
+
     const diff = await getGitDiff()
     const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan]
 
@@ -57,7 +58,7 @@ async function start(show: boolean) {
         const diffAsContext = JSON.stringify(diff)
 
         spinner.start()
-        const textCommitMessage = await createCommitMessages(diffAsContext)
+        const textCommitMessage = await generateCommitMessages(diff)
 
         spinner.stop()
 
@@ -92,6 +93,7 @@ async function start(show: boolean) {
         }
 
     } else {
+        console.error('Something went wrong. Make sure there are staged changes using "git add --all".')
         process.exit(0)
     }
 }
@@ -175,7 +177,7 @@ async function promptApiKey(): Promise<string> {
     return answer.apiKey
 }
 
-async function createCommitMessages(diff: string): Promise<string> {
+async function checkGeminiApiKey() {
     const config = loadConfig()
     if (config.geminiApiKey === '') {
         const { generatedKey } = await inquirer.prompt([
@@ -197,8 +199,6 @@ async function createCommitMessages(diff: string): Promise<string> {
             geminiApiKey: pastedApiKey
         })
     }
-
-    return generateCommitMessages(diff)
 }
 
 async function generateCommitMessages(diff: string): Promise<string> {
@@ -207,17 +207,24 @@ async function generateCommitMessages(diff: string): Promise<string> {
         'Content-Type': 'application/json',
     }
     const data = {
+        "systemInstruction": {
+            "parts": [
+                {
+                    "text": `You are an expert at analyzing the git diff changes.`
+                }
+            ]
+        },
         "contents": [
             {
                 "parts": [
                     {
-                        "text": `${diff}`
+                        "text": `Git diff: \n${diff}`
                     },
                     {
-                        "text": `Message Spec: ${loadConfig().messageSpec}`
+                        "text": `Message specification: ${loadConfig().messageSpec}`
                     },
                     {
-                        "text": `List at least ${loadConfig().sizeOption} commit message options according to the message spec.`
+                        "text": `Provide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
                     }
                 ]
             }
