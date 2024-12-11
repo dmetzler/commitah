@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ESNext",
+        "strict": true,
+        "esModuleInterop": true,
+        "moduleResolution": "node",
+        "outDir": "dist",
+        "rootDir": "src",
+        "types": [
+            "zx"
+        ]
+    },
+    "include": [
+        "src/**/*.ts"
+, "src/script.mjs"    ],
+    "exclude": [
+        "node_modules"
+    ]
+}
