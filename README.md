@@ -1,7 +1,5 @@
 # Commitah CLI
 
-
-
 Commitah is a Command Line Interface (CLI) tool that automates the process of generating Git commit messages using Generative AI powered by Gemini. This tool streamlines commit creation by analyzing `git diff` and providing multiple commit message suggestions based on user-defined specifications.
 
 ## Features
@@ -30,6 +28,10 @@ Run the tool in a Git repository with staged changes:
 commitah
 ```
 
+
+https://github.com/user-attachments/assets/f83d1393-422a-4af3-9439-73fc2c9d5281
+
+
 ### Options
 - `--config`: Show the current configuration.
 - `--config-update`: Update the Gemini API Key or message specification.
@@ -42,7 +44,15 @@ commitah --show
 
 ## Configuration
 
-Configuration is stored in `~/.commitahconfig`. When first run, the tool generates a default configuration. If the Gemini API Key is empty, the tool will open a browser for the user to generate the API Key and provide a prompt to paste it back into the CLI:
+Configuration is stored in `~/.commitahconfig`. When first run, the tool generates a default configuration. If the Gemini API Key is empty, the tool will open a browser for the user to generate the API Key and provide a prompt to paste it back into the CLI.
+
+
+https://github.com/user-attachments/assets/b7a346e5-702b-403d-a1ed-81981a8d2f30
+
+
+
+
+### Generated Default Configuration
 
 ```json
 {
