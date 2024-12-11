@@ -155,7 +155,8 @@ async function getGitDiff(): Promise<string | null> {
         }
 
         const diffResult = await $`git diff --unified=5 --color=never`.nothrow().quiet()
-        return diffResult.stdout.trim()
+        const diffResultStaged = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet()
+        return diffResult.stdout.trim() + `\n` + diffResultStaged.stdout.trim()
     } catch (error) {
         console.error("An error occurred:", error)
         return null
