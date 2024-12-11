@@ -218,13 +218,10 @@ async function generateCommitMessages(diff: string): Promise<string> {
             {
                 "parts": [
                     {
-                        "text": `Git diff: \n${diff}`
-                    },
-                    {
                         "text": `Message specification: ${loadConfig().messageSpec}`
                     },
                     {
-                        "text": `Provide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
+                        "text": `Git diff: \n${diff}. \nProvide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
                     }
                 ]
             }
