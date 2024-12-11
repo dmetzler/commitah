@@ -57,9 +57,3 @@ export function updateConfig(newConfig: Partial<Config>): Config {
     saveConfig(updatedConfig)
     return updatedConfig
 }
-
-// const config = loadConfig()
-// console.log("Loaded Config:", config)
-
-// const updatedConfig = updateConfig({ geminiApiKey: "new-api-key", sizeOption: 20 })
-// console.log("Updated Config:", updatedConfig)
