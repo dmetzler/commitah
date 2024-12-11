@@ -262,20 +262,3 @@ async function generateCommitMessages(diff: string): Promise<string> {
         return 'Something wrong!'
     }
 }
-
-interface GeminiResponseContent {
-    candidates: {
-        content: {
-            parts: { text: string }[]
-            role: string
-        }
-        finishReason: string
-        avgLogprobs: number
-    }[]
-    usageMetadata: {
-        promptTokenCount: number
-        candidatesTokenCount: number
-        totalTokenCount: number
-    }
-    modelVersion: string
-}
