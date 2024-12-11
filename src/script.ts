@@ -154,9 +154,8 @@ async function getGitDiff(): Promise<string | null> {
             return `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim()
         }
 
-        const diffResult = await $`git diff --unified=5 --color=never`.nothrow().quiet()
-        const diffResultStaged = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet()
-        return diffResult.stdout.trim() + `\n` + diffResultStaged.stdout.trim()
+        const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet()
+        return diffResult.stdout.trim()
     } catch (error) {
         console.error("An error occurred:", error)
         return null
@@ -254,8 +253,6 @@ async function generateCommitMessages(diff: string): Promise<string> {
 
         const typedResult = result as GeminiResponseContent
         const textResult = typedResult.candidates[0].content.parts[0].text
-
-        const parsedList = JSON.parse(textResult).map((item: { message: string }) => item.message);
 
         return textResult
     } catch (error) {
