@@ -5,6 +5,7 @@ function createDefaultConfig() {
         geminiApiKey: "",
         messageSpec: "More tech detailing and comprehensive in one line message.",
         sizeOption: 3,
+        model: "gemini-2.0-flash-exp"
     };
 }
 function getConfigPath() {

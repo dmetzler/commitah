@@ -132,6 +132,12 @@ async function promptAndUpdateConfig() {
             message: "Enter the sizeOption:",
             default: loadConfig().sizeOption,
         },
+        {
+            type: "input",
+            name: "model",
+            message: "Enter the model (https://ai.google.dev/gemini-api/docs/models/gemini#model-variations):",
+            default: loadConfig().model,
+        },
     ])
 
     const updatedConfig = updateConfig(answers)
@@ -206,6 +212,7 @@ async function promptApiKey(): Promise<string> {
 
 async function checkGeminiApiKey() {
     const config = loadConfig()
+    
     if (config.geminiApiKey === '') {
         const { generatedKey } = await inquirer.prompt([
             {
@@ -229,7 +236,8 @@ async function checkGeminiApiKey() {
 }
 
 async function generateCommitMessages(diff: string, prevCommit: string): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${loadConfig().geminiApiKey}`
+    const model = loadConfig().model
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${loadConfig().geminiApiKey}`
     const headers = {
         'Content-Type': 'application/json',
     }

@@ -39,7 +39,7 @@ async function start(show) {
     await checkGeminiApiKey();
     const diff = await getGitDiff();
     const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan];
-    if (diff) {
+    if (diff.diff) {
         const spinner = ora({
             text: 'Generating commit..',
             spinner: {
@@ -50,9 +50,10 @@ async function start(show) {
                 })
             }
         });
-        const diffAsContext = JSON.stringify(diff);
+        const diffAsContext = JSON.stringify(diff.diff);
+        const prevCommit = JSON.stringify(diff.prevCommit);
         spinner.start();
-        const textCommitMessage = await generateCommitMessages(diff);
+        const textCommitMessage = await generateCommitMessages(diffAsContext, prevCommit);
         spinner.stop();
         try {
             const parsedList = JSON.parse(textCommitMessage).map((item) => item.message);
@@ -113,21 +114,34 @@ async function promptAndUpdateConfig() {
             message: "Enter the sizeOption:",
             default: loadConfig().sizeOption,
         },
+        {
+            type: "input",
+            name: "model",
+            message: "Enter the model (https://ai.google.dev/gemini-api/docs/models/gemini#model-variations):",
+            default: loadConfig().model,
+        },
     ]);
     const updatedConfig = updateConfig(answers);
     console.log("Configuration updated successfully:", updatedConfig);
 }
 async function getGitDiff() {
+    let diffCommit = {
+        diff: null,
+        prevCommit: null,
+        error: null
+    };
     try {
         const isGitInstalled = await $ `git --version`.nothrow().quiet();
         if (isGitInstalled.exitCode !== 0) {
             console.error("Error: Git is not installed or not found in PATH.");
-            return null;
+            diffCommit.error = "Error: Git is not installed or not found in PATH.";
+            return diffCommit;
         }
         const isInsideGitRepo = await $ `git rev-parse --is-inside-work-tree`.nothrow().quiet();
         if (isInsideGitRepo.exitCode !== 0) {
             console.error("Error: Not a git repository. Please initialize git with 'git init'.");
-            return null;
+            diffCommit.error = "Error: Not a git repository. Please initialize git with 'git init'.";
+            return diffCommit;
         }
         const hasPreviousCommit = await $ `git rev-list --max-count=1 HEAD`.nothrow().quiet();
         if (hasPreviousCommit.exitCode !== 0) {
@@ -138,14 +152,23 @@ async function getGitDiff() {
             else {
                 directoryStructure = await $ `find . -maxdepth 3 ! -path "*/.*" ! -path "*/node_modules*" ! -path "*/.git*"`.nothrow().quiet();
             }
-            return `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim();
+            diffCommit.error = `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim();
+            return diffCommit;
+            //return `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim()
         }
         const diffResult = await $ `git diff --staged --unified=5 --color=never`.nothrow().quiet();
-        return diffResult.stdout.trim();
+        const prevCommits = await $ `git log --pretty=format:"%s"`.nothrow().quiet();
+        diffCommit.error = null;
+        diffCommit.diff = diffResult.stdout.trim();
+        diffCommit.prevCommit = prevCommits.stdout.trim();
+        return diffCommit;
+        //return diffResult.stdout.trim()
     }
     catch (error) {
         console.error("An error occurred:", error);
-        return null;
+        //return null
+        diffCommit.error = "An error occurred";
+        return diffCommit;
     }
 }
 async function promptApiKey() {
@@ -180,8 +203,9 @@ async function checkGeminiApiKey() {
         });
     }
 }
-async function generateCommitMessages(diff) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${loadConfig().geminiApiKey}`;
+async function generateCommitMessages(diff, prevCommit) {
+    const model = loadConfig().model;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${loadConfig().geminiApiKey}`;
     const headers = {
         'Content-Type': 'application/json',
     };
@@ -190,6 +214,9 @@ async function generateCommitMessages(diff) {
             "parts": [
                 {
                     "text": `You are an expert at analyzing the git diff changes.`
+                },
+                {
+                    "text": `Your message specification output: ${loadConfig().messageSpec}`
                 }
             ]
         },
@@ -197,10 +224,13 @@ async function generateCommitMessages(diff) {
             {
                 "parts": [
                     {
-                        "text": `Message specification: ${loadConfig().messageSpec}`
+                        "text": `Previous commits: ${prevCommit}`
                     },
                     {
-                        "text": `Git diff: \n${diff}. \nProvide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
+                        "text": `Current diff: ${diff}`
+                    },
+                    {
+                        "text": `Provide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
                     }
                 ]
             }

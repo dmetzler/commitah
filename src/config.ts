@@ -5,6 +5,7 @@ interface Config {
     readonly geminiApiKey: string
     readonly messageSpec: string
     readonly sizeOption: number
+    readonly model: string
 }
 
 function createDefaultConfig(): Config {
@@ -12,6 +13,7 @@ function createDefaultConfig(): Config {
         geminiApiKey: "",
         messageSpec: "More tech detailing and comprehensive in one line message.",
         sizeOption: 3,
+        model: "gemini-2.0-flash-exp"
     }
 }
 
