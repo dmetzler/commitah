@@ -9,6 +9,12 @@ import { $ } from "zx/core"
 import { loadConfig, updateConfig } from "./config.js"
 import { select } from '@inquirer/prompts';
 
+interface DiffCommit {
+    diff: string | null
+    prevCommit: string | null
+    error: string | null
+}
+
 const argv = await yargs(process.argv.slice(2)).options({
     config: {
         type: 'boolean',
@@ -43,7 +49,7 @@ async function start(show: boolean) {
     const diff = await getGitDiff()
     const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan]
 
-    if (diff) {
+    if (diff.diff) {
         const spinner = ora({
             text: 'Generating commit..',
             spinner: {
@@ -55,10 +61,11 @@ async function start(show: boolean) {
             }
         })
 
-        const diffAsContext = JSON.stringify(diff)
+        const diffAsContext = JSON.stringify(diff.diff)
+        const prevCommit = JSON.stringify(diff.prevCommit)
 
         spinner.start()
-        const textCommitMessage = await generateCommitMessages(diff)
+        const textCommitMessage = await generateCommitMessages(diffAsContext)
 
         spinner.stop()
 
@@ -131,18 +138,27 @@ async function promptAndUpdateConfig() {
     console.log("Configuration updated successfully:", updatedConfig)
 }
 
-async function getGitDiff(): Promise<string | null> {
+async function getGitDiff(): Promise<DiffCommit> {
+
+    let diffCommit: DiffCommit = {
+        diff: null,
+        prevCommit: null,
+        error: null
+    }
+
     try {
         const isGitInstalled = await $`git --version`.nothrow().quiet()
         if (isGitInstalled.exitCode !== 0) {
             console.error("Error: Git is not installed or not found in PATH.")
-            return null
+            diffCommit.error = "Error: Git is not installed or not found in PATH."
+            return diffCommit
         }
 
         const isInsideGitRepo = await $`git rev-parse --is-inside-work-tree`.nothrow().quiet()
         if (isInsideGitRepo.exitCode !== 0) {
             console.error("Error: Not a git repository. Please initialize git with 'git init'.")
-            return null
+            diffCommit.error = "Error: Not a git repository. Please initialize git with 'git init'."
+            return diffCommit
         }
 
         const hasPreviousCommit = await $`git rev-list --max-count=1 HEAD`.nothrow().quiet()
@@ -153,14 +169,25 @@ async function getGitDiff(): Promise<string | null> {
             } else {
                 directoryStructure = await $`find . -maxdepth 3 ! -path "*/.*" ! -path "*/node_modules*" ! -path "*/.git*"`.nothrow().quiet()
             }
-            return `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim()
+            diffCommit.error = `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim()
+            return diffCommit
+            //return `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim()
         }
 
+        
         const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet()
-        return diffResult.stdout.trim()
+        const prevCommits = await $`git log --pretty=format:"%s"`.nothrow().quiet()
+        diffCommit.error = null
+        diffCommit.diff = diffResult.stdout.trim()
+        diffCommit.prevCommit = prevCommits.stdout.trim()
+        return diffCommit
+        //return diffResult.stdout.trim()
+        
     } catch (error) {
         console.error("An error occurred:", error)
-        return null
+        //return null
+        diffCommit.error = "An error occurred"
+        return diffCommit
     }
 }
 
@@ -201,8 +228,8 @@ async function checkGeminiApiKey() {
     }
 }
 
-async function generateCommitMessages(diff: string): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${loadConfig().geminiApiKey}`
+async function generateCommitMessages(diff: string, prevCommit: string): Promise<string> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${loadConfig().geminiApiKey}`
     const headers = {
         'Content-Type': 'application/json',
     }
@@ -211,6 +238,9 @@ async function generateCommitMessages(diff: string): Promise<string> {
             "parts": [
                 {
                     "text": `You are an expert at analyzing the git diff changes.`
+                },
+                {
+                    "text": `Your message specification output: ${loadConfig().messageSpec}`
                 }
             ]
         },
@@ -218,10 +248,13 @@ async function generateCommitMessages(diff: string): Promise<string> {
             {
                 "parts": [
                     {
-                        "text": `Message specification: ${loadConfig().messageSpec}`
+                        "text": `Previous commits: ${prevCommit}`
                     },
                     {
-                        "text": `Git diff: \n${diff}. \nProvide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
+                        "text": `Current diff: ${diff}`
+                    },
+                    {
+                        "text": `Provide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
                     }
                 ]
             }
