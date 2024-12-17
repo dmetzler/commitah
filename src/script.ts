@@ -65,7 +65,7 @@ async function start(show: boolean) {
         const prevCommit = JSON.stringify(diff.prevCommit)
 
         spinner.start()
-        const textCommitMessage = await generateCommitMessages(diffAsContext)
+        const textCommitMessage = await generateCommitMessages(diffAsContext, prevCommit)
 
         spinner.stop()
 
