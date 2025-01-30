@@ -8,6 +8,7 @@ import ora from 'ora';
 import { $ } from "zx/core";
 import { loadConfig, updateConfig } from "./config.js";
 import { select } from '@inquirer/prompts';
+import { checkForUpdates } from './updater.js'
 
 interface DiffCommit {
     diff: string | null;
@@ -33,6 +34,9 @@ const argv = await yargs(process.argv.slice(2)).options({
 
 export async function main() {
     console.log(chalk.red(figlet.textSync('Commit Ah!')));
+
+    await checkForUpdates(); 
+
     if (argv.config) {
         await showCurrentConfig();
     } else if (argv.configUpdate) {
