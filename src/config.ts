@@ -2,6 +2,7 @@ import * as fs from "fs"
 import * as path from "path"
 
 interface Config {
+    readonly openaiApiKey: string
     readonly geminiApiKey: string
     readonly messageSpec: string
     readonly sizeOption: number
@@ -11,6 +12,7 @@ interface Config {
 function createDefaultConfig(): Config {
     return {
         geminiApiKey: "",
+        openaiApiKey: "",
         messageSpec: "More tech detailing and comprehensive in one line message.",
         sizeOption: 3,
         model: "gemini-2.0-flash-exp"

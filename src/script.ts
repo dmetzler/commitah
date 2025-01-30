@@ -5,6 +5,7 @@ import open from "open";
 import yargs from "yargs";
 import fetch from 'node-fetch';
 import ora from 'ora';
+import OpenAI from 'openai';
 import { $ } from "zx/core";
 import { loadConfig, updateConfig } from "./config.js";
 import { select } from '@inquirer/prompts';
@@ -47,7 +48,7 @@ export async function main() {
 }
 
 async function start(show: boolean) {
-    await checkGeminiApiKey();
+    await checkOpenAIApiKey();
 
     const diff = await getGitDiff();
     const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan];
@@ -109,7 +110,7 @@ async function start(show: boolean) {
 
 async function showCurrentConfig() {
     const config = loadConfig();
-    console.log(`Gemini API Key: ${config.geminiApiKey}`);
+    console.log(`OpenAI API Key: ${config.openaiApiKey}`);
     console.log(`Message spec: ${config.messageSpec}`);
     console.log(`Options size: ${config.sizeOption}`);
 }
@@ -118,10 +119,10 @@ async function promptAndUpdateConfig() {
     const answers = await inquirer.prompt([
         {
             type: "input",
-            name: "geminiApiKey",
-            message: "Enter the geminiApiKey:",
-            default: loadConfig().geminiApiKey,
-            validate: (input) => input.trim() !== "" || "geminiApiKey cannot be empty.",
+            name: "openaiApiKey",
+            message: "Enter the OpenAI API Key:",
+            default: loadConfig().openaiApiKey,
+            validate: (input) => input.trim() !== "" || "OpenAI API Key cannot be empty.",
         },
         {
             type: "input",
@@ -138,8 +139,8 @@ async function promptAndUpdateConfig() {
         {
             type: "input",
             name: "model",
-            message: "Enter the model (https://ai.google.dev/gemini-api/docs/models/gemini#model-variations):",
-            default: loadConfig().model,
+            message: "Enter the model (e.g., gpt-4, gpt-3.5-turbo):",
+            default: loadConfig().model || "gpt-4",
         },
     ]);
 
@@ -172,14 +173,12 @@ async function getGitDiff(): Promise<DiffCommit> {
         const hasPreviousCommit = await $`git rev-list --max-count=1 HEAD`.nothrow().quiet();
 
         if (hasPreviousCommit.exitCode !== 0) {
-            // Tidak ada commit sebelumnya, namun tetap ambil diff yang di-stage
             const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet();
             diffCommit.diff = diffResult.stdout.trim();
             diffCommit.prevCommit = 'Initial commit';
             return diffCommit;
         }
 
-        // Jika ada commit sebelumnya
         const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet();
         const prevCommits = await $`git log --pretty=format:"%s"`.nothrow().quiet();
         diffCommit.error = null;
@@ -199,116 +198,89 @@ async function promptApiKey(): Promise<string> {
         {
             type: 'input',
             name: 'apiKey',
-            message: 'Gemini Api Key: ',
-            validate: (input: string) => input.length > 0 || 'Gemini Api Key invalid!'
+            message: 'OpenAI API Key: ',
+            validate: (input: string) => input.length > 0 || 'OpenAI API Key invalid!'
         }
     ]);
 
     return answer.apiKey;
 }
 
-async function checkGeminiApiKey() {
+async function checkOpenAIApiKey() {
     const config = loadConfig();
 
-    if (!config.geminiApiKey) {
+    if (!config.openaiApiKey) {
         const { generatedKey } = await inquirer.prompt([
             {
                 type: 'confirm',
                 name: 'generatedKey',
-                message: 'Open browser to create a new Gemini Api Key?',
+                message: 'Open browser to create a new OpenAI API Key?',
                 default: true
             }
         ]);
 
         if (generatedKey) {
-            const geminiDashboardUrl = 'https://aistudio.google.com/apikey';
-            await open(geminiDashboardUrl);
+            const openaiDashboardUrl = 'https://platform.openai.com/api-keys';
+            await open(openaiDashboardUrl);
         }
 
         const pastedApiKey = await promptApiKey();
         updateConfig({
-            geminiApiKey: pastedApiKey
+            openaiApiKey: pastedApiKey
         });
     }
 }
 
-interface GeminiResponseContent {
-    candidates: Array<{
-        content: {
-            parts: Array<{
-                text: string;
-            }>;
-        };
-    }>;
-}
-
 async function generateCommitMessages(diff: string, prevCommit: string): Promise<string> {
     const config = loadConfig();
-    const model = config.model;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.geminiApiKey}`;
-    const headers = {
-        'Content-Type': 'application/json',
-    };
-    const data = {
-        "systemInstruction": {
-            "parts": [
-                {
-                    "text": `You are an expert at analyzing the git diff changes.`
-                },
-                {
-                    "text": `Your message specification output: ${config.messageSpec}`
-                }
-            ]
-        },
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": `Previous commits: ${prevCommit}`
-                    },
-                    {
-                        "text": `Current diff: ${diff}`
-                    },
-                    {
-                        "text": `Provide at least ${config.sizeOption} alternative commit message options according to the above message specification.`
-                    }
-                ]
-            }
-        ],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "message": {
-                            "type": "STRING"
-                        }
-                    }
-                }
-            }
-        }
-    };
+    const openai = new OpenAI({
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        apiKey: config.openaiApiKey
+    });
+
+    const systemMessage = `You are an expert at analyzing git diff changes.
+Your message specification output: ${config.messageSpec}`;
 
     try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(data),
+        const response = await openai.chat.completions.create({
+            model: config.model || "gpt-4",
+            messages: [
+                { role: "system", content: systemMessage },
+                { 
+                    role: "user", 
+                    content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide at least ${config.sizeOption} alternative commit message options according to the above message specification.` 
+                }
+            ],
+            response_format: { type: "json_object" },
+            functions: [
+                {
+                    name: "format_commit_messages",
+                    description: "Format the commit messages as a JSON array",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            messages: {
+                                type: "array",
+                                items: {
+                                    type: "object",
+                                    properties: {
+                                        message: { type: "string" }
+                                    },
+                                    required: ["message"]
+                                }
+                            }
+                        },
+                        required: ["messages"]
+                    }
+                }
+            ],
+            function_call: { name: "format_commit_messages" }
         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        const typedResult = result as GeminiResponseContent;
-        const textResult = typedResult.candidates[0].content.parts[0].text;
-
-        return textResult;
+        const result = response.choices[0]?.message?.function_call?.arguments;
+        return result || '[]';
     } catch (error) {
         console.error("Error generating commit messages:", error);
-        return '[]'; // Mengembalikan array kosong dalam format JSON
+        return '[]';
     }
 }
