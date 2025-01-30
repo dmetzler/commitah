@@ -10,6 +10,15 @@ import { $ } from "zx/core";
 import { loadConfig, updateConfig } from "./config.js";
 import { select } from '@inquirer/prompts';
 import { checkForUpdates } from './updater.js'
+import { zodResponseFormat } from "openai/helpers/zod";
+import { z } from "zod";
+
+// Add Zod to your imports and define the schema
+const CommitMessage = z.object({
+    messages: z.array(z.object({
+        message: z.string()
+    }))
+});
 
 interface DiffCommit {
     diff: string | null;
@@ -73,11 +82,12 @@ async function start(show: boolean) {
         spinner.stop();
 
         try {
-            const parsedList = JSON.parse(textCommitMessage).map((item: { message: string }) => item.message);
+            console.log(`anjaaayyyy --> ${textCommitMessage}`)
+            // const parsedList = JSON.parse(textCommitMessage).map((item: { message: string }) => item.message);
 
             const answer = await select({
                 message: 'Select commit message: ',
-                choices: parsedList
+                choices: textCommitMessage
             });
 
             if (show) {
@@ -231,56 +241,44 @@ async function checkOpenAIApiKey() {
     }
 }
 
-async function generateCommitMessages(diff: string, prevCommit: string): Promise<string> {
+
+
+async function generateCommitMessages(diff: string, prevCommit: string): Promise<string[]> {
     const config = loadConfig();
     const openai = new OpenAI({
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
         apiKey: config.openaiApiKey
     });
 
-    const systemMessage = `You are an expert at analyzing git diff changes.
+    const systemMessage = `You are an expert at analyzing git diff changes. 
+Your task is to generate commit messages based on the git diff.
 Your message specification output: ${config.messageSpec}`;
 
     try {
-        const response = await openai.chat.completions.create({
+        const completion = await openai.beta.chat.completions.parse({
             model: config.model || "gpt-4",
             messages: [
-                { role: "system", content: systemMessage },
+                { 
+                    role: "system", 
+                    content: systemMessage 
+                },
                 { 
                     role: "user", 
-                    content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide at least ${config.sizeOption} alternative commit message options according to the above message specification.` 
+                    content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide ${config.sizeOption} alternative commit message options.` 
                 }
             ],
-            response_format: { type: "json_object" },
-            functions: [
-                {
-                    name: "format_commit_messages",
-                    description: "Format the commit messages as a JSON array",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            messages: {
-                                type: "array",
-                                items: {
-                                    type: "object",
-                                    properties: {
-                                        message: { type: "string" }
-                                    },
-                                    required: ["message"]
-                                }
-                            }
-                        },
-                        required: ["messages"]
-                    }
-                }
-            ],
-            function_call: { name: "format_commit_messages" }
+            response_format: zodResponseFormat(CommitMessage, "commitSuggestions")
         });
 
-        const result = response.choices[0]?.message?.function_call?.arguments;
-        return result || '[]';
+        const parsed = completion.choices[0]?.message?.parsed;
+        if (!parsed) {
+            console.error("No parsed result from OpenAI");
+            return [];
+        }
+
+        return parsed.messages.map(item => item.message);
     } catch (error) {
         console.error("Error generating commit messages:", error);
-        return '[]';
+        return [];
     }
 }
