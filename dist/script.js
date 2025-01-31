@@ -1,13 +1,21 @@
 import chalk from "chalk";
 import figlet from "figlet";
-import inquirer from "inquirer";
-import open from "open";
 import yargs from "yargs";
-import fetch from 'node-fetch';
 import ora from 'ora';
+import OpenAI from 'openai';
 import { $ } from "zx/core";
-import { loadConfig, updateConfig } from "./config.js";
-import { select } from '@inquirer/prompts';
+import { loadConfig } from "./config.js";
+import { checkForUpdates } from './updater.js';
+import { zodResponseFormat } from "openai/helpers/zod";
+import { z } from "zod";
+import { ConfigProviderForm } from "./wizard.js";
+import { exit } from "process";
+import { CommitSelector } from "./commit-ui.js";
+const CommitMessage = z.object({
+    messages: z.array(z.object({
+        message: z.string()
+    }))
+});
 const argv = await yargs(process.argv.slice(2)).options({
     config: {
         type: 'boolean',
@@ -25,6 +33,7 @@ const argv = await yargs(process.argv.slice(2)).options({
 }).parseAsync();
 export async function main() {
     console.log(chalk.red(figlet.textSync('Commit Ah!')));
+    await checkForUpdates();
     if (argv.config) {
         await showCurrentConfig();
     }
@@ -36,10 +45,10 @@ export async function main() {
     }
 }
 async function start(show) {
-    await checkGeminiApiKey();
+    await checkproviderApiKey();
     const diff = await getGitDiff();
     const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan];
-    if (diff) {
+    if (diff.diff) {
         const spinner = ora({
             text: 'Generating commit..',
             spinner: {
@@ -50,21 +59,23 @@ async function start(show) {
                 })
             }
         });
-        const diffAsContext = JSON.stringify(diff);
+        const diffAsContext = JSON.stringify(diff.diff);
+        const prevCommit = diff.prevCommit ? JSON.stringify(diff.prevCommit) : '';
         spinner.start();
-        const textCommitMessage = await generateCommitMessages(diff);
+        const textCommitMessage = await generateCommitMessages(diffAsContext, prevCommit);
         spinner.stop();
         try {
-            const parsedList = JSON.parse(textCommitMessage).map((item) => item.message);
-            const answer = await select({
-                message: 'Select commit message: ',
-                choices: parsedList
-            });
+            const selector = new CommitSelector();
+            const answer = await selector.showMessages(textCommitMessage);
+            if (answer === null) {
+                console.log(chalk.yellow('Commit selection cancelled'));
+                return;
+            }
             if (show) {
                 console.log(chalk.green(`\n    '${answer}'\n`));
             }
             else {
-                spinner.text = 'Git commiting...';
+                spinner.text = 'Git committing...';
                 spinner.start();
                 const commitMessage = answer;
                 const gitCommit = await $ `git commit -m ${commitMessage}`.nothrow().quiet();
@@ -83,158 +94,135 @@ async function start(show) {
         }
     }
     else {
-        console.error('Something went wrong. Make sure there are staged changes using "git add --all".');
+        console.error('Something went wrong. Make sure there are staged changes using "git add".');
         process.exit(0);
     }
 }
 async function showCurrentConfig() {
-    console.log(`Gemini API Key: ${loadConfig().geminiApiKey}`);
-    console.log(`Message spec: ${loadConfig().messageSpec}`);
-    console.log(`Options size: ${loadConfig().sizeOption}`);
+    const currentConfigString = `
+
+    Provider                : ${loadConfig().provider}
+    Provider URL            : ${loadConfig().providerUrl}
+    Provider API key        : ${loadConfig().providerApiKey}
+    AI Model                : ${loadConfig().model}
+    Message Specification   : ${loadConfig().messageSpec}
+    Output count            : ${loadConfig().sizeOption}
+    
+    `;
+    console.log(currentConfigString);
 }
 async function promptAndUpdateConfig() {
-    const answers = await inquirer.prompt([
-        {
-            type: "input",
-            name: "geminiApiKey",
-            message: "Enter the geminiApiKey:",
-            default: loadConfig().geminiApiKey,
-            validate: (input) => input.trim() !== "" || "geminiApiKey cannot be empty.",
-        },
-        {
-            type: "input",
-            name: "messageSpec",
-            message: "Enter the messageSpec:",
-            default: loadConfig().messageSpec,
-        },
-        {
-            type: "number",
-            name: "sizeOption",
-            message: "Enter the sizeOption:",
-            default: loadConfig().sizeOption,
-        },
-    ]);
-    const updatedConfig = updateConfig(answers);
-    console.log("Configuration updated successfully:", updatedConfig);
+    const configForm = new ConfigProviderForm();
+    await configForm.run();
+    console.log("Configuration updated successfully:", loadConfig());
 }
 async function getGitDiff() {
+    let diffCommit = {
+        diff: null,
+        prevCommit: null,
+        error: null
+    };
     try {
         const isGitInstalled = await $ `git --version`.nothrow().quiet();
         if (isGitInstalled.exitCode !== 0) {
             console.error("Error: Git is not installed or not found in PATH.");
-            return null;
+            diffCommit.error = "Error: Git is not installed or not found in PATH.";
+            return diffCommit;
         }
         const isInsideGitRepo = await $ `git rev-parse --is-inside-work-tree`.nothrow().quiet();
         if (isInsideGitRepo.exitCode !== 0) {
             console.error("Error: Not a git repository. Please initialize git with 'git init'.");
-            return null;
+            diffCommit.error = "Error: Not a git repository. Please initialize git with 'git init'.";
+            return diffCommit;
         }
         const hasPreviousCommit = await $ `git rev-list --max-count=1 HEAD`.nothrow().quiet();
         if (hasPreviousCommit.exitCode !== 0) {
-            let directoryStructure;
-            if (process.platform === "win32") {
-                directoryStructure = await $ `dir`.nothrow().quiet();
-            }
-            else {
-                directoryStructure = await $ `find . -maxdepth 3 ! -path "*/.*" ! -path "*/node_modules*" ! -path "*/.git*"`.nothrow().quiet();
-            }
-            return `No commits found in the repository. Returning directory structure: \n` + directoryStructure.stdout.trim();
+            const diffResult = await $ `git diff --staged --unified=5 --color=never`.nothrow().quiet();
+            diffCommit.diff = diffResult.stdout.trim();
+            diffCommit.prevCommit = 'Initial commit';
+            return diffCommit;
         }
         const diffResult = await $ `git diff --staged --unified=5 --color=never`.nothrow().quiet();
-        return diffResult.stdout.trim();
+        const prevCommits = await $ `git log --pretty=format:"%s"`.nothrow().quiet();
+        diffCommit.error = null;
+        diffCommit.diff = diffResult.stdout.trim();
+        diffCommit.prevCommit = prevCommits.stdout.trim();
+        return diffCommit;
     }
     catch (error) {
         console.error("An error occurred:", error);
-        return null;
+        diffCommit.error = "An error occurred";
+        return diffCommit;
     }
 }
-async function promptApiKey() {
-    const answer = await inquirer.prompt([
-        {
-            type: 'input',
-            name: 'apiKey',
-            message: 'Gemini Api Key: ',
-            validate: (input) => input.length > 0 || 'Gemini Api Key invalid!'
+async function checkproviderApiKey() {
+    if (!loadConfig().providerApiKey || !loadConfig().providerUrl) {
+        const configForm = new ConfigProviderForm();
+        await configForm.run();
+        if (!loadConfig().providerApiKey || !loadConfig().providerUrl) {
+            console.error('Provider not set, exiting...');
+            exit(0);
         }
-    ]);
-    return answer.apiKey;
+    }
 }
-async function checkGeminiApiKey() {
+async function generateCommitMessages(diff, prevCommit) {
     const config = loadConfig();
-    if (config.geminiApiKey === '') {
-        const { generatedKey } = await inquirer.prompt([
-            {
-                type: 'confirm',
-                name: 'generatedKey',
-                message: 'Open browser for create new Gemini Api Key?',
-                default: true
-            }
-        ]);
-        if (generatedKey) {
-            const geminiDashboardUrl = 'https://aistudio.google.com/apikey';
-            await open(geminiDashboardUrl);
-        }
-        const pastedApiKey = await promptApiKey();
-        updateConfig({
-            geminiApiKey: pastedApiKey
-        });
+    let baseUrl = config.providerUrl;
+    if (!isURL(baseUrl)) {
+        console.error(`\nUrl provider is broken! Please run 'commitah --config-update' and re-config again.`);
+        exit(0);
     }
-}
-async function generateCommitMessages(diff) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${loadConfig().geminiApiKey}`;
-    const headers = {
-        'Content-Type': 'application/json',
-    };
-    const data = {
-        "systemInstruction": {
-            "parts": [
-                {
-                    "text": `You are an expert at analyzing the git diff changes.`
-                }
-            ]
-        },
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": `Message specification: ${loadConfig().messageSpec}`
-                    },
-                    {
-                        "text": `Git diff: \n${diff}. \nProvide at least ${loadConfig().sizeOption} alternative commit message options according to the above message specification.`
-                    }
-                ]
-            }
-        ],
-        "generationConfig": {
-            "response_mime_type": "application/json",
-            "response_schema": {
-                "type": "ARRAY",
-                "items": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "message": {
-                            "type": "STRING"
-                        }
-                    }
-                }
-            }
-        }
-    };
+    if (config.provider === 'Ollama') {
+        const ollamaBaseUrl = config.providerUrl + '/v1';
+        baseUrl = ollamaBaseUrl.replace(/([^:])\/\/+/g, '$1/').replace(/(\/v1)(?:\/v1)+/g, '$1');
+    }
+    const openai = new OpenAI({
+        baseURL: baseUrl,
+        apiKey: config.providerApiKey
+    });
+    const systemMessage = `
+    You are an expert at analyzing the git diff changes.
+    
+    Follow these rules for commit messages:
+    1. Format: <type>[scope]([optional context]): <long description>
+    
+    2. Follow Conventional Commits rules with scope types
+
+    3. Message should be minimum 90 characters and maximum 110 characters
+
+    4. Message should be more highly technical, include file name or function
+
+    Follow this additional rules: ${config.messageSpec}
+    `;
     try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(data),
+        const completion = await openai.beta.chat.completions.parse({
+            model: config.model || "gpt-4",
+            messages: [
+                {
+                    role: "system",
+                    content: systemMessage
+                },
+                {
+                    role: "user",
+                    content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide ${config.sizeOption} alternative commit message options following conventional commit format and previous commits.`
+                }
+            ],
+            response_format: zodResponseFormat(CommitMessage, "commitSuggestions"),
+            temperature: 0.2
         });
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+        const parsed = completion.choices[0]?.message?.parsed;
+        if (!parsed) {
+            console.error(`No parsed result from ${config.provider}`);
+            return [];
         }
-        const result = await response.json();
-        const typedResult = result;
-        const textResult = typedResult.candidates[0].content.parts[0].text;
-        return textResult;
+        return parsed.messages.map(item => item.message);
     }
     catch (error) {
-        return 'Something wrong!';
+        console.error("Error generating commit messages:", error);
+        return [];
     }
+}
+function isURL(string) {
+    const urlRegex = /^(https?:\/\/)?(www\.)?([a-zA-Z0-9\-\.]+\.)+([a-zA-Z0-9\-\/]+)([/?#]*)*$/;
+    return urlRegex.test(string);
 }

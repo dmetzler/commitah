@@ -2,22 +2,28 @@ import * as fs from "fs"
 import * as path from "path"
 
 interface Config {
-    readonly geminiApiKey: string
+    readonly providerApiKey: string
     readonly messageSpec: string
+    readonly provider: string
+    readonly providerUrl: string
     readonly sizeOption: number
+    readonly model: string
 }
 
 function createDefaultConfig(): Config {
     return {
-        geminiApiKey: "",
+        provider: "",
+        providerApiKey: "",
+        providerUrl: "",
         messageSpec: "More tech detailing and comprehensive in one line message.",
         sizeOption: 3,
+        model: "gemini-2.0-flash-exp"
     }
 }
 
 function getConfigPath(): string {
-    const homeDir = process.env.HOME || process.env.USERPROFILE // Mendapatkan direktori home
-    return path.join(homeDir!, ".commitahconfig")
+    const homeDir = process.env.HOME || process.env.USERPROFILE
+    return path.join(homeDir!, ".commitahconfig-v2")
 }
 
 export function loadConfig(): Config {
