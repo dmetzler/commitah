@@ -12,6 +12,7 @@ import { select } from '@inquirer/prompts';
 import { checkForUpdates } from './updater.js'
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
+import { ConfigProviderForm } from "./wizard.js";
 
 // Add Zod to your imports and define the schema
 const CommitMessage = z.object({
@@ -57,7 +58,8 @@ export async function main() {
 }
 
 async function start(show: boolean) {
-    await checkOpenAIApiKey();
+    await checkproviderApiKey();
+    console.log("Selesai menunggu checkproviderApiKey()");
 
     const diff = await getGitDiff();
     const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan];
@@ -120,7 +122,7 @@ async function start(show: boolean) {
 
 async function showCurrentConfig() {
     const config = loadConfig();
-    console.log(`OpenAI API Key: ${config.openaiApiKey}`);
+    console.log(`OpenAI API Key: ${config.providerApiKey}`);
     console.log(`Message spec: ${config.messageSpec}`);
     console.log(`Options size: ${config.sizeOption}`);
 }
@@ -129,9 +131,9 @@ async function promptAndUpdateConfig() {
     const answers = await inquirer.prompt([
         {
             type: "input",
-            name: "openaiApiKey",
+            name: "providerApiKey",
             message: "Enter the OpenAI API Key:",
-            default: loadConfig().openaiApiKey,
+            default: loadConfig().providerApiKey,
             validate: (input) => input.trim() !== "" || "OpenAI API Key cannot be empty.",
         },
         {
@@ -203,42 +205,30 @@ async function getGitDiff(): Promise<DiffCommit> {
     }
 }
 
-async function promptApiKey(): Promise<string> {
-    const answer = await inquirer.prompt([
-        {
-            type: 'input',
-            name: 'apiKey',
-            message: 'OpenAI API Key: ',
-            validate: (input: string) => input.length > 0 || 'OpenAI API Key invalid!'
-        }
-    ]);
+// async function promptApiKey(): Promise<string> {
+//     const answer = await inquirer.prompt([
+//         {
+//             type: 'input',
+//             name: 'apiKey',
+//             message: 'OpenAI API Key: ',
+//             validate: (input: string) => input.length > 0 || 'OpenAI API Key invalid!'
+//         }
+//     ]);
 
-    return answer.apiKey;
-}
+//     return answer.apiKey;
+// }
 
-async function checkOpenAIApiKey() {
+async function checkproviderApiKey() {
     const config = loadConfig();
+    console.log(`cuaks`)
+    console.log(config)
+    console.log(`cuaks prov: ${config.providerUrl != ''}`)
 
-    if (!config.openaiApiKey) {
-        const { generatedKey } = await inquirer.prompt([
-            {
-                type: 'confirm',
-                name: 'generatedKey',
-                message: 'Open browser to create a new OpenAI API Key?',
-                default: true
-            }
-        ]);
 
-        if (generatedKey) {
-            const openaiDashboardUrl = 'https://platform.openai.com/api-keys';
-            await open(openaiDashboardUrl);
-        }
-
-        const pastedApiKey = await promptApiKey();
-        updateConfig({
-            openaiApiKey: pastedApiKey
-        });
-    }
+    if (!config.providerApiKey || !config.providerUrl) {
+        const configForm = new ConfigProviderForm();
+        await configForm.run()
+    } 
 }
 
 
@@ -247,7 +237,7 @@ async function generateCommitMessages(diff: string, prevCommit: string): Promise
     const config = loadConfig();
     const openai = new OpenAI({
         baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-        apiKey: config.openaiApiKey
+        apiKey: config.providerApiKey
     });
 
     const systemMessage = `You are an expert at analyzing git diff changes. 

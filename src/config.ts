@@ -2,17 +2,17 @@ import * as fs from "fs"
 import * as path from "path"
 
 interface Config {
-    readonly openaiApiKey: string
-    readonly geminiApiKey: string
+    readonly providerApiKey: string
     readonly messageSpec: string
+    readonly providerUrl: string
     readonly sizeOption: number
     readonly model: string
 }
 
 function createDefaultConfig(): Config {
     return {
-        geminiApiKey: "",
-        openaiApiKey: "",
+        providerApiKey: "",
+        providerUrl: "",
         messageSpec: "More tech detailing and comprehensive in one line message.",
         sizeOption: 3,
         model: "gemini-2.0-flash-exp"
@@ -20,7 +20,7 @@ function createDefaultConfig(): Config {
 }
 
 function getConfigPath(): string {
-    const homeDir = process.env.HOME || process.env.USERPROFILE // Mendapatkan direktori home
+    const homeDir = process.env.HOME || process.env.USERPROFILE
     return path.join(homeDir!, ".commitahconfig")
 }
 
