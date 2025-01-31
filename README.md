@@ -1,94 +1,137 @@
 # Commitah CLI
 
-
-
-Commitah is a Command Line Interface (CLI) tool that automates the process of generating Git commit messages using Generative AI powered by Gemini. This tool streamlines commit creation by analyzing `git diff` and providing multiple commit message suggestions based on user-defined specifications.
+A powerful Command Line Interface (CLI) tool that leverages AI to generate meaningful and standardized Git commit messages. Commitah analyzes your staged changes and provides contextual commit message suggestions following conventional commit standards.
 
 ## Features
 
-- **AI-Powered Commit Messages**: Generates contextual commit messages based on staged changes.
-- **Customizable Configurations**: Modify message specifications and Gemini API Key.
-- **Interactive UI**: CLI prompts to choose from suggested messages.
-- **Error Handling**: Ensures Git and required configurations are properly set up.
+- 🤖 **AI-Powered Messages**: Generates commit messages by analyzing git diff using various AI providers
+- 🎨 **Interactive UI**: User-friendly CLI interface for selecting commit messages
+- ⚙️ **Multiple AI Providers**: Supports OpenAI, Gemini, DeepSeek, and Ollama
+- 🔧 **Configurable**: Customize message specifications and provider settings
+- 📝 **Conventional Commits**: Follows standardized commit message format
+
+| Commit selection v2 |
+| ---- |
+| ![alt text](img/img-select.png) |
+
+| AI Provider on configuration v2 |
+| ---- |
+| ![alt text](img/img-config.png) |
+
+## Prerequisites
+
+- Node.js v16 or later
+- Git installed and available in PATH
+- API key from your chosen AI provider (OpenAI, Gemini, DeepSeek) or Ollama running locally
 
 ## Installation
 
-### Prerequisites
-- [Node.js](https://nodejs.org) v16 or later
-- [Git](https://git-scm.com) installed and available in PATH
-
-### Install CLI App
 ```bash
 npm install --global commitah
 ```
 
 ## Usage
 
-### Basic Command
-Run the tool in a Git repository with staged changes:
+Basic usage:
 ```bash
+# Stage your changes first
+git add .
+
+# Generate commit message
 commitah
 ```
 
-### Options
-- `--config`: Show the current configuration.
-- `--config-update`: Update the Gemini API Key or message specification.
-- `--show`: Preview the selected commit message without committing.
-
-### Example
+Available options:
 ```bash
+# Show current configuration
+commitah --config
+
+# Update configuration
+commitah --config-update
+
+# Preview commit message without committing
 commitah --show
 ```
 
 ## Configuration
 
-Configuration is stored in `~/.commitahconfig`. When first run, the tool generates a default configuration. If the Gemini API Key is empty, the tool will open a browser for the user to generate the API Key and provide a prompt to paste it back into the CLI:
+Configuration is stored in `~/.commitahconfig-v2`. The tool will create a default configuration on first run. <br> You can update the configuration using the `--config-update` option.
 
+Example configuration:
 ```json
 {
-  "geminiApiKey": "",
-  "messageSpec": "simple for each message, with Commit Conventions standard",
-  "sizeOption": 3
+  "provider": "OpenAI",
+  "providerApiKey": "your-api-key",
+  "providerUrl": "https://api.openai.com/v1",
+  "messageSpec": "conventional commit",
+  "sizeOption": 3,
+  "model": "gpt-4-turbo-preview"
 }
 ```
 
-### Updating Configuration
-Use the following command to update configuration:
+### Supported Providers
+
+- **OpenAI**: Uses GPT models
+- **Gemini**: Uses Google's Gemini models
+- **DeepSeek**: Uses DeepSeek's language models
+- **Ollama**: Uses locally hosted models
+
+## Ollama Setup Instructions
+
+1. First, install Ollama on your system following the instructions at [Ollama's official website](https://ollama.ai)
+
+2. Pull the **recommended models**:
+```bash
+# Pull Qwen2.5 Coder
+ollama pull qwen2.5-coder
+
+# Pull Dolphin 3
+ollama pull dolphin3
+
+# Pull Gemma 2B
+ollama pull gemma:2b
+```
+
+3. Configure Commitah to use Ollama:
 ```bash
 commitah --config-update
 ```
+Then:
+- Select 'Ollama' as the provider
+- Enter your Ollama URL (default: http://localhost:11434)
+- Select one of the recommended models:
+  - qwen2.5-coder (Recommended for best code understanding)
+  - dolphin3 (Good balance of speed and accuracy)
+  - gemma:2b (Lightweight option)
 
-## Dependencies
+Note: Ensure Ollama is running before using Commitah with these models.
 
-Commitah uses the following libraries:
-- [inquirer](https://www.npmjs.com/package/inquirer)
-- [figlet](https://www.npmjs.com/package/figlet)
-- [chalk](https://www.npmjs.com/package/chalk)
-- [yargs](https://www.npmjs.com/package/yargs)
-- [ora](https://www.npmjs.com/package/ora)
-- [node-fetch](https://www.npmjs.com/package/node-fetch)
+## How It Works
+
+1. Analyzes staged changes using `git diff`
+2. Sends the diff to the configured AI provider
+3. Generates multiple commit message suggestions
+4. Presents an interactive UI to select the preferred message
+5. Creates the commit with the selected message
 
 ## Development
 
-### Directory Structure
-- **src/**: Contains the source code.
-- **dist/**: Compiled JavaScript files.
-- **config.js**: Handles reading and writing configuration files.
-- **main.js**: Entry point for the CLI.
+To build from source:
 
-### Build
-To compile the TypeScript source files:
 ```bash
+# Clone the repository
+git clone [repository-url]
+
+# Install dependencies
+npm install
+
+# Build the project
 npm run build
 ```
 
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
-
 ## License
 
-This project is licensed under the ISC License.
+ISC License
 
 ## Author
 

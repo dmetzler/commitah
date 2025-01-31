@@ -4,6 +4,7 @@ import * as path from "path"
 interface Config {
     readonly providerApiKey: string
     readonly messageSpec: string
+    readonly provider: string
     readonly providerUrl: string
     readonly sizeOption: number
     readonly model: string
@@ -11,6 +12,7 @@ interface Config {
 
 function createDefaultConfig(): Config {
     return {
+        provider: "",
         providerApiKey: "",
         providerUrl: "",
         messageSpec: "More tech detailing and comprehensive in one line message.",
@@ -21,7 +23,7 @@ function createDefaultConfig(): Config {
 
 function getConfigPath(): string {
     const homeDir = process.env.HOME || process.env.USERPROFILE
-    return path.join(homeDir!, ".commitahconfig")
+    return path.join(homeDir!, ".commitahconfig-v2")
 }
 
 export function loadConfig(): Config {

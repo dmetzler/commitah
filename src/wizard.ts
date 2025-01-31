@@ -29,7 +29,7 @@ export class ConfigProviderForm {
   constructor() {
     this.screen = blessed.screen({
       smartCSR: true,
-      title: 'AI Provider Configuration'
+      title: 'Commitah AI Provider Configuration'
     })
 
     this.form = blessed.form<FormData>({
@@ -43,16 +43,12 @@ export class ConfigProviderForm {
     }) as blessed.Widgets.FormElement<FormData>
 
     blessed.box({
-      parent: this.screen,
+      parent: this.form,
       top: 0,
-      left: 0,
+      left: 2,
       right: 0,
       height: 1,
-      content: 'AI Provider Configuration',
-      style: {
-        bg: 'blue',
-        fg: 'white'
-      }
+      content: 'Commitah AI Provider Configuration'
     })
 
     this.createRadioFields()
@@ -114,13 +110,13 @@ export class ConfigProviderForm {
           modelInput.setValue('gpt-4-turbo-preview')
           break
         case 'Gemini':
-          modelInput.setValue('gemini-pro')
+          modelInput.setValue('gemini-1.5-flash')
           break
         case 'DeepSeek':
           modelInput.setValue('deepseek-chat')
           break
         case 'Ollama':
-          modelInput.setValue('llama2')
+          modelInput.setValue('llama3.2')
           break
       }
     }
@@ -131,12 +127,28 @@ export class ConfigProviderForm {
   private createFields(): void {
     const currentConfig = loadConfig()
 
+    let initialProvider = currentConfig.provider || 'OpenAI'
+    let initialApiKeyLabel = `${initialProvider} API Key:`
+    let initialApiKeyValue = currentConfig.providerApiKey
+
+    if (currentConfig.provider === 'Ollama') {
+      initialApiKeyLabel = `Ollama URL:`
+      initialApiKeyValue = currentConfig.providerUrl
+    }
+
+    const radioButtons = this.radioset.children as blessed.Widgets.RadioButtonElement[]
+    radioButtons.forEach(radio => {
+      if (radio.content === initialProvider) {
+        radio.check()
+      }
+    })
+
     const fields = [
       {
         name: 'apiKey',
-        label: 'OpenAI API Key:',
+        label: initialApiKeyLabel,
         top: 8,
-        value: currentConfig.providerApiKey || ''
+        value: initialApiKeyValue
       },
       {
         name: 'model',
@@ -146,7 +158,7 @@ export class ConfigProviderForm {
       },
       {
         name: 'resultCount',
-        label: 'Result Count:',
+        label: 'Result count:',
         value: currentConfig.sizeOption?.toString() || '1',
         top: 12
       }
@@ -175,7 +187,8 @@ export class ConfigProviderForm {
           }
         },
         inputOnFocus: true,
-        value: field.value
+        value: field.value,
+
       }) as blessed.Widgets.TextboxElement
 
       textbox.key('enter', () => {
@@ -246,12 +259,12 @@ export class ConfigProviderForm {
       const configUpdate: any = {
         model: formData.model,
         sizeOption: parseInt(formData.resultCount, 10) || 1,
-        messageSpec: "conventional commit"
+        messageSpec: "conventional commit",
+        provider: selectedProvider
       }
 
-
       if (formData.provider === 'Ollama') {
-        configUpdate.providerUrl = formData.apiKey + '/v1'
+        configUpdate.providerUrl = formData.apiKey
         configUpdate.providerApiKey = 'ollama'
       } else {
         let baseUrl = ''

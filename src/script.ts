@@ -1,30 +1,27 @@
-import chalk from "chalk";
-import figlet from "figlet";
-import inquirer from "inquirer";
-import open from "open";
-import yargs from "yargs";
-import fetch from 'node-fetch';
-import ora from 'ora';
-import OpenAI from 'openai';
-import { $ } from "zx/core";
-import { loadConfig, updateConfig } from "./config.js";
-import { select } from '@inquirer/prompts';
+import chalk from "chalk"
+import figlet from "figlet"
+import yargs from "yargs"
+import ora from 'ora'
+import OpenAI from 'openai'
+import { $ } from "zx/core"
+import { loadConfig } from "./config.js"
 import { checkForUpdates } from './updater.js'
-import { zodResponseFormat } from "openai/helpers/zod";
-import { z } from "zod";
-import { ConfigProviderForm } from "./wizard.js";
+import { zodResponseFormat } from "openai/helpers/zod"
+import { z } from "zod"
+import { ConfigProviderForm } from "./wizard.js"
+import { exit } from "process"
+import { CommitSelector } from "./commit-ui.js"
 
-// Add Zod to your imports and define the schema
 const CommitMessage = z.object({
     messages: z.array(z.object({
         message: z.string()
     }))
-});
+})
 
 interface DiffCommit {
-    diff: string | null;
-    prevCommit: string | null;
-    error: string | null;
+    diff: string | null
+    prevCommit: string | null
+    error: string | null
 }
 
 const argv = await yargs(process.argv.slice(2)).options({
@@ -41,28 +38,27 @@ const argv = await yargs(process.argv.slice(2)).options({
         type: 'boolean',
         default: false
     }
-}).parseAsync();
+}).parseAsync()
 
 export async function main() {
-    console.log(chalk.red(figlet.textSync('Commit Ah!')));
+    console.log(chalk.red(figlet.textSync('Commit Ah!')))
 
-    await checkForUpdates(); 
+    await checkForUpdates()
 
     if (argv.config) {
-        await showCurrentConfig();
+        await showCurrentConfig()
     } else if (argv.configUpdate) {
-        await promptAndUpdateConfig();
+        await promptAndUpdateConfig()
     } else {
-        start(argv.show);
+        start(argv.show)
     }
 }
 
 async function start(show: boolean) {
-    await checkproviderApiKey();
-    console.log("Selesai menunggu checkproviderApiKey()");
+    await checkproviderApiKey()
 
-    const diff = await getGitDiff();
-    const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan];
+    const diff = await getGitDiff()
+    const colors = [chalk.red, chalk.yellow, chalk.green, chalk.blue, chalk.magenta, chalk.cyan]
 
     if (diff.diff) {
         const spinner = ora({
@@ -70,94 +66,74 @@ async function start(show: boolean) {
             spinner: {
                 interval: 80,
                 frames: Array.from({ length: colors.length }, (_, i) => {
-                    const color = colors[i];
-                    return color(i % 2 === 0 ? '✦' : '✧');
+                    const color = colors[i]
+                    return color(i % 2 === 0 ? '✦' : '✧')
                 })
             }
-        });
+        })
 
-        const diffAsContext = JSON.stringify(diff.diff);
-        const prevCommit = diff.prevCommit ? JSON.stringify(diff.prevCommit) : '';
+        const diffAsContext = JSON.stringify(diff.diff)
+        const prevCommit = diff.prevCommit ? JSON.stringify(diff.prevCommit) : ''
 
-        spinner.start();
-        const textCommitMessage = await generateCommitMessages(diffAsContext, prevCommit);
-        spinner.stop();
+        spinner.start()
+        const textCommitMessage = await generateCommitMessages(diffAsContext, prevCommit)
+        spinner.stop()
 
         try {
-            console.log(`anjaaayyyy --> ${textCommitMessage}`)
-            // const parsedList = JSON.parse(textCommitMessage).map((item: { message: string }) => item.message);
+            const selector = new CommitSelector()
+            const answer = await selector.showMessages(textCommitMessage)
 
-            const answer = await select({
-                message: 'Select commit message: ',
-                choices: textCommitMessage
-            });
-
-            if (show) {
-                console.log(chalk.green(`\n    '${answer}'\n`));
-            } else {
-                spinner.text = 'Git committing...';
-                spinner.start();
-
-                const commitMessage: string = answer as string;
-
-                const gitCommit = await $`git commit -m ${commitMessage}`.nothrow().quiet();
-                const commitOutput = gitCommit.stdout.trim();
-                if (gitCommit.exitCode !== 0) {
-                    spinner.fail(`Something error: ${commitOutput}`);
-                } else {
-                    spinner.succeed(commitOutput);
-                }
+            if (answer === null) {
+                console.log(chalk.yellow('Commit selection cancelled'))
+                return
             }
 
+            if (show) {
+                console.log(chalk.green(`\n    '${answer}'\n`))
+            } else {
+                spinner.text = 'Git committing...'
+                spinner.start()
+
+                const commitMessage: string = answer
+
+                const gitCommit = await $`git commit -m ${commitMessage}`.nothrow().quiet()
+                const commitOutput = gitCommit.stdout.trim()
+                if (gitCommit.exitCode !== 0) {
+                    spinner.fail(`Something error: ${commitOutput}`)
+                } else {
+                    spinner.succeed(commitOutput)
+                }
+            }
         } catch (error) {
-            console.log(error);
-            spinner.fail('Something error');
+            console.log(error)
+            spinner.fail('Something error')
         }
 
     } else {
-        console.error('Something went wrong. Make sure there are staged changes using "git add --all".');
-        process.exit(0);
+        console.error('Something went wrong. Make sure there are staged changes using "git add".')
+        process.exit(0)
     }
 }
 
 async function showCurrentConfig() {
-    const config = loadConfig();
-    console.log(`OpenAI API Key: ${config.providerApiKey}`);
-    console.log(`Message spec: ${config.messageSpec}`);
-    console.log(`Options size: ${config.sizeOption}`);
+    const currentConfigString = `
+
+    Provider                : ${loadConfig().provider}
+    Provider URL            : ${loadConfig().providerUrl}
+    Provider API key        : ${loadConfig().providerApiKey}
+    AI Model                : ${loadConfig().model}
+    Message Specification   : ${loadConfig().messageSpec}
+    Output count            : ${loadConfig().sizeOption}
+    
+    `
+    console.log(currentConfigString)
 }
 
 async function promptAndUpdateConfig() {
-    const answers = await inquirer.prompt([
-        {
-            type: "input",
-            name: "providerApiKey",
-            message: "Enter the OpenAI API Key:",
-            default: loadConfig().providerApiKey,
-            validate: (input) => input.trim() !== "" || "OpenAI API Key cannot be empty.",
-        },
-        {
-            type: "input",
-            name: "messageSpec",
-            message: "Enter the messageSpec:",
-            default: loadConfig().messageSpec,
-        },
-        {
-            type: "number",
-            name: "sizeOption",
-            message: "Enter the sizeOption:",
-            default: loadConfig().sizeOption,
-        },
-        {
-            type: "input",
-            name: "model",
-            message: "Enter the model (e.g., gpt-4, gpt-3.5-turbo):",
-            default: loadConfig().model || "gpt-4",
-        },
-    ]);
+    const configForm = new ConfigProviderForm()
+    await configForm.run()
 
-    const updatedConfig = updateConfig(answers);
-    console.log("Configuration updated successfully:", updatedConfig);
+    console.log("Configuration updated successfully:", loadConfig())
 }
 
 async function getGitDiff(): Promise<DiffCommit> {
@@ -165,110 +141,125 @@ async function getGitDiff(): Promise<DiffCommit> {
         diff: null,
         prevCommit: null,
         error: null
-    };
+    }
 
     try {
-        const isGitInstalled = await $`git --version`.nothrow().quiet();
+        const isGitInstalled = await $`git --version`.nothrow().quiet()
         if (isGitInstalled.exitCode !== 0) {
-            console.error("Error: Git is not installed or not found in PATH.");
-            diffCommit.error = "Error: Git is not installed or not found in PATH.";
-            return diffCommit;
+            console.error("Error: Git is not installed or not found in PATH.")
+            diffCommit.error = "Error: Git is not installed or not found in PATH."
+            return diffCommit
         }
 
-        const isInsideGitRepo = await $`git rev-parse --is-inside-work-tree`.nothrow().quiet();
+        const isInsideGitRepo = await $`git rev-parse --is-inside-work-tree`.nothrow().quiet()
         if (isInsideGitRepo.exitCode !== 0) {
-            console.error("Error: Not a git repository. Please initialize git with 'git init'.");
-            diffCommit.error = "Error: Not a git repository. Please initialize git with 'git init'.";
-            return diffCommit;
+            console.error("Error: Not a git repository. Please initialize git with 'git init'.")
+            diffCommit.error = "Error: Not a git repository. Please initialize git with 'git init'."
+            return diffCommit
         }
 
-        const hasPreviousCommit = await $`git rev-list --max-count=1 HEAD`.nothrow().quiet();
+        const hasPreviousCommit = await $`git rev-list --max-count=1 HEAD`.nothrow().quiet()
 
         if (hasPreviousCommit.exitCode !== 0) {
-            const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet();
-            diffCommit.diff = diffResult.stdout.trim();
-            diffCommit.prevCommit = 'Initial commit';
-            return diffCommit;
+            const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet()
+            diffCommit.diff = diffResult.stdout.trim()
+            diffCommit.prevCommit = 'Initial commit'
+            return diffCommit
         }
 
-        const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet();
-        const prevCommits = await $`git log --pretty=format:"%s"`.nothrow().quiet();
-        diffCommit.error = null;
-        diffCommit.diff = diffResult.stdout.trim();
-        diffCommit.prevCommit = prevCommits.stdout.trim();
-        return diffCommit;
+        const diffResult = await $`git diff --staged --unified=5 --color=never`.nothrow().quiet()
+        const prevCommits = await $`git log --pretty=format:"%s"`.nothrow().quiet()
+        diffCommit.error = null
+        diffCommit.diff = diffResult.stdout.trim()
+        diffCommit.prevCommit = prevCommits.stdout.trim()
+        return diffCommit
 
     } catch (error) {
-        console.error("An error occurred:", error);
-        diffCommit.error = "An error occurred";
-        return diffCommit;
+        console.error("An error occurred:", error)
+        diffCommit.error = "An error occurred"
+        return diffCommit
     }
 }
 
-// async function promptApiKey(): Promise<string> {
-//     const answer = await inquirer.prompt([
-//         {
-//             type: 'input',
-//             name: 'apiKey',
-//             message: 'OpenAI API Key: ',
-//             validate: (input: string) => input.length > 0 || 'OpenAI API Key invalid!'
-//         }
-//     ]);
-
-//     return answer.apiKey;
-// }
-
 async function checkproviderApiKey() {
-    const config = loadConfig();
-    console.log(`cuaks`)
-    console.log(config)
-    console.log(`cuaks prov: ${config.providerUrl != ''}`)
 
-
-    if (!config.providerApiKey || !config.providerUrl) {
-        const configForm = new ConfigProviderForm();
+    if (!loadConfig().providerApiKey || !loadConfig().providerUrl) {
+        const configForm = new ConfigProviderForm()
         await configForm.run()
-    } 
+
+        if (!loadConfig().providerApiKey || !loadConfig().providerUrl) {
+            console.error('Provider not set, exiting...')
+            exit(0)
+        }
+    }
+
 }
 
-
-
 async function generateCommitMessages(diff: string, prevCommit: string): Promise<string[]> {
-    const config = loadConfig();
-    const openai = new OpenAI({
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-        apiKey: config.providerApiKey
-    });
+    const config = loadConfig()
+    let baseUrl = config.providerUrl
 
-    const systemMessage = `You are an expert at analyzing git diff changes. 
-Your task is to generate commit messages based on the git diff.
-Your message specification output: ${config.messageSpec}`;
+    if (!isURL(baseUrl)) {
+        console.error(`\nUrl provider is broken! Please run 'commitah --config-update' and re-config again.`)
+        exit(0)
+    }
+
+    if (config.provider === 'Ollama') {
+        const ollamaBaseUrl = config.providerUrl + '/v1'
+        baseUrl = ollamaBaseUrl.replace(/([^:])\/\/+/g, '$1/').replace(/(\/v1)(?:\/v1)+/g, '$1')
+    }
+
+    const openai = new OpenAI({
+        baseURL: baseUrl,
+        apiKey: config.providerApiKey
+    })
+
+    const systemMessage = `
+    You are an expert at analyzing the git diff changes.
+    
+    Follow these rules for commit messages:
+    1. Format: <type>[scope]([optional context]): <long description>
+    
+    2. Follow Conventional Commits rules with scope types
+
+    3. Message should be minimum 90 characters and maximum 110 characters
+
+    4. Message should be more highly technical, include file name or function
+
+    Follow this additional rules: ${config.messageSpec}
+    `
 
     try {
         const completion = await openai.beta.chat.completions.parse({
             model: config.model || "gpt-4",
             messages: [
-                { 
-                    role: "system", 
-                    content: systemMessage 
+                {
+                    role: "system",
+                    content: systemMessage
                 },
-                { 
-                    role: "user", 
-                    content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide ${config.sizeOption} alternative commit message options.` 
+                {
+                    role: "user",
+                    content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide ${config.sizeOption} alternative commit message options following conventional commit format and previous commits.`
                 }
             ],
-            response_format: zodResponseFormat(CommitMessage, "commitSuggestions")
-        });
+            response_format: zodResponseFormat(CommitMessage, "commitSuggestions"),
+            temperature: 0.2
+        })
 
-        const parsed = completion.choices[0]?.message?.parsed;
+        const parsed = completion.choices[0]?.message?.parsed
         if (!parsed) {
-            console.error("No parsed result from OpenAI");
-            return [];
+            console.error(`No parsed result from ${config.provider}`)
+            return []
         }
 
-        return parsed.messages.map(item => item.message);
+        return parsed.messages.map(item => item.message)
     } catch (error) {
-        console.error("Error generating commit messages:", error);
-        return [];
+        console.error("Error generating commit messages:", error)
+        return []
     }
+}
+
+function isURL(string: string): boolean {
+    const urlRegex = /^(https?:\/\/)?(www\.)?([a-zA-Z0-9\-\.]+\.)+([a-zA-Z0-9\-\/]+)([/?#]*)*$/;
+    return urlRegex.test(string);
 }
