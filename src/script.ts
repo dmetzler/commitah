@@ -242,20 +242,38 @@ async function generateCommitMessages(diff: string, prevCommit: string): Promise
                     content: `Previous commits: ${prevCommit}\nCurrent diff: ${diff}\nProvide ${config.sizeOption} alternative commit message options following conventional commit format and previous commits.`
                 }
             ],
-            response_format: zodResponseFormat(CommitMessage, "commitSuggestions"),
-            temperature: 0.2
+            response_format: zodResponseFormat(CommitMessage, "commitSuggestions")
+        }).catch(error => {
+            if (error.status === 401) {
+                console.error(`Authentication error: Invalid API key for ${config.provider}`)
+                exit(1)
+            }
+            if (error.status === 404) {
+                console.error(`Model ${config.model} not found in ${config.provider}`)
+                exit(1)
+            }
+            if (error.status === 429) {
+                console.error(`Rate limit exceeded for ${config.provider}`)
+                exit(1)
+            }
+            throw error
         })
+
+        if (!completion) {
+            console.error(`Failed to get response from ${config.provider}`)
+            exit(1)
+        }
 
         const parsed = completion.choices[0]?.message?.parsed
         if (!parsed) {
             console.error(`No parsed result from ${config.provider}`)
-            return []
+            exit(1)
         }
 
         return parsed.messages.map(item => item.message)
     } catch (error) {
-        console.error("Error generating commit messages:", error)
-        return []
+        console.error(`Error generating commit messages from ${config.provider}:`, error)
+        exit(1)
     }
 }
 

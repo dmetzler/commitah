@@ -22,7 +22,8 @@ export class ConfigProviderForm {
     'OpenAI',
     'Gemini',
     'DeepSeek',
-    'Ollama'
+    'Ollama',
+    'Custom'
   ]
   private resolveForm?: (value: boolean) => void
 
@@ -94,29 +95,69 @@ export class ConfigProviderForm {
 
   private updateFields(provider: string): void {
     const apiKeyLabel = this.textLabels.get('apiKey')
-    const modelInput = this.textboxes.get('model')
+    const modelLabel = this.textLabels.get('model')
+    const apiKeyField = this.textboxes.get('apiKey')
+    const modelField = this.textboxes.get('model')
+    const resultCountLabel = this.textLabels.get('resultCount')
+    const resultCountField = this.textboxes.get('resultCount')
 
-    if (apiKeyLabel) {
-      if (provider === 'Ollama') {
-        apiKeyLabel.setContent('Ollama URL:')
-      } else {
-        apiKeyLabel.setContent(`${provider} API Key:`)
+    const customUrlLabel = this.textLabels.get('customUrl')
+    const customApiKeyLabel = this.textLabels.get('customApiKey')
+    const customUrlField = this.textboxes.get('customUrl')
+    const customApiKeyField = this.textboxes.get('customApiKey')
+
+    // Toggle visibility based on provider
+    if (provider === 'Custom') {
+      // Hide standard apiKey field
+      apiKeyLabel?.hide()
+      apiKeyField?.hide()
+      // Show custom fields
+      customUrlLabel?.show()
+      customApiKeyLabel?.show()
+      customUrlField?.show()
+      customApiKeyField?.show()
+      // Keep model and result count visible
+      modelLabel?.show()
+      modelField?.show()
+      resultCountLabel?.show()
+      resultCountField?.show()
+    } else {
+      // Show standard fields
+      apiKeyLabel?.show()
+      apiKeyField?.show()
+      modelLabel?.show()
+      modelField?.show()
+      resultCountLabel?.show()
+      resultCountField?.show()
+      // Hide custom fields
+      customUrlLabel?.hide()
+      customApiKeyLabel?.hide()
+      customUrlField?.hide()
+      customApiKeyField?.hide()
+
+      if (apiKeyLabel) {
+        apiKeyLabel.setContent(provider === 'Ollama' ? 'Ollama URL:' : `${provider} API Key:`)
       }
     }
 
-    if (modelInput) {
+    // Update model field for all providers
+    if (modelField) {
       switch (provider) {
         case 'OpenAI':
-          modelInput.setValue('gpt-4-turbo-preview')
+          modelField.setValue('gpt-4-turbo-preview')
           break
         case 'Gemini':
-          modelInput.setValue('gemini-1.5-flash')
+          modelField.setValue('gemini-1.5-flash')
           break
         case 'DeepSeek':
-          modelInput.setValue('deepseek-chat')
+          modelField.setValue('deepseek-chat')
           break
         case 'Ollama':
-          modelInput.setValue('llama3.2')
+          modelField.setValue('llama3.2')
+          break
+        case 'Custom':
+          // Keep existing value or clear it
+          modelField.setValue(modelField.value || '')
           break
       }
     }
@@ -126,41 +167,27 @@ export class ConfigProviderForm {
 
   private createFields(): void {
     const currentConfig = loadConfig()
+    const initialProvider = currentConfig.provider || 'OpenAI'
 
-    let initialProvider = currentConfig.provider || 'OpenAI'
-    let initialApiKeyLabel = `${initialProvider} API Key:`
-    let initialApiKeyValue = currentConfig.providerApiKey
-
-    if (currentConfig.provider === 'Ollama') {
-      initialApiKeyLabel = `Ollama URL:`
-      initialApiKeyValue = currentConfig.providerUrl
-    }
-
-    const radioButtons = this.radioset.children as blessed.Widgets.RadioButtonElement[]
-    radioButtons.forEach(radio => {
-      if (radio.content === initialProvider) {
-        radio.check()
-      }
-    })
-
+    // Create standard fields with model field first
     const fields = [
-      {
-        name: 'apiKey',
-        label: initialApiKeyLabel,
-        top: 8,
-        value: initialApiKeyValue
-      },
       {
         name: 'model',
         label: 'Model:',
-        value: currentConfig.model || 'gpt-4-turbo-preview',
-        top: 10
+        value: currentConfig.model || '',
+        top: 8
+      },
+      {
+        name: 'apiKey',
+        label: initialProvider === 'Ollama' ? 'Ollama URL:' : `${initialProvider} API Key:`,
+        top: 10,
+        value: initialProvider === 'Ollama' ? currentConfig.providerUrl : currentConfig.providerApiKey
       },
       {
         name: 'resultCount',
         label: 'Result count:',
         value: currentConfig.sizeOption?.toString() || '1',
-        top: 12
+        top: 14  // Moved down to accommodate custom fields
       }
     ]
 
@@ -203,6 +230,80 @@ export class ConfigProviderForm {
       this.textboxes.set(field.name, textbox)
       this.textLabels.set(field.name, textLabel)
     })
+
+    // Add custom provider fields after model field
+    const customFields = [
+      {
+        name: 'customUrl',
+        label: 'Custom URL:',
+        top: 10,
+        value: currentConfig.provider === 'Custom' ? currentConfig.providerUrl : '',
+      },
+      {
+        name: 'customApiKey',
+        label: 'Custom API Key:',
+        top: 12,
+        value: currentConfig.provider === 'Custom' ? currentConfig.providerApiKey : '',
+      }
+    ]
+
+    customFields.forEach(field => {
+      const textLabel = blessed.text({
+        parent: this.form,
+        top: field.top,
+        left: 2,
+        content: field.label,
+        height: 1
+      })
+
+      const textbox = blessed.textbox({
+        parent: this.form,
+        name: field.name,
+        top: field.top,
+        left: 25,
+        right: 2,
+        height: 1,
+        style: {
+          focus: {
+            bg: 'blue',
+            fg: 'white'
+          }
+        },
+        inputOnFocus: true,
+        value: field.value,
+      }) as blessed.Widgets.TextboxElement
+
+      textbox.key('enter', () => {
+        const nextField = this.getNextVisibleField(field.name)
+        if (nextField) {
+          nextField.focus()
+        } else {
+          this.submitButton.focus()
+        }
+      })
+
+      this.textboxes.set(field.name, textbox)
+      this.textLabels.set(field.name, textLabel)
+
+      // Initially hide custom fields if not Custom provider
+      if (initialProvider !== 'Custom') {
+        textLabel.hide()
+        textbox.hide()
+      }
+    })
+
+    // Initialize radio button state for Custom provider
+    if (initialProvider === 'Custom') {
+      const radioButtons = this.radioset.children as blessed.Widgets.RadioButtonElement[]
+      radioButtons.forEach(radio => {
+        if (radio.content === 'Custom') {
+          radio.check()
+        }
+      })
+      // Hide standard apiKey field
+      this.textLabels.get('apiKey')?.hide()
+      this.textboxes.get('apiKey')?.hide()
+    }
   }
 
   private getNextVisibleField(currentFieldName: string): blessed.Widgets.TextboxElement | null {
@@ -257,7 +358,7 @@ export class ConfigProviderForm {
       }
 
       const configUpdate: any = {
-        model: formData.model,
+        model: formData.model, // Model is always saved from the model field
         sizeOption: parseInt(formData.resultCount, 10) || 1,
         messageSpec: "conventional commit",
         provider: selectedProvider
@@ -266,6 +367,9 @@ export class ConfigProviderForm {
       if (formData.provider === 'Ollama') {
         configUpdate.providerUrl = formData.apiKey
         configUpdate.providerApiKey = 'ollama'
+      } else if (formData.provider === 'Custom') {
+        configUpdate.providerUrl = this.textboxes.get('customUrl')?.value || ''
+        configUpdate.providerApiKey = this.textboxes.get('customApiKey')?.value || ''
       } else {
         let baseUrl = ''
         switch (formData.provider) {
